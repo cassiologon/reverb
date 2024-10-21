@@ -10,6 +10,8 @@ use Laravel\Reverb\Loggers\Log;
 use Laravel\Reverb\Protocols\Pusher\Contracts\ChannelManager;
 use Laravel\Reverb\Protocols\Pusher\Exceptions\InvalidOrigin;
 use Laravel\Reverb\Protocols\Pusher\Exceptions\PusherException;
+use Illuminate\Support\Facades\Log as LogTETE;
+use App\Services\MachineService;
 
 class Server
 {
@@ -52,6 +54,26 @@ class Server
         try {
             $event = json_decode($message, associative: true, flags: JSON_THROW_ON_ERROR);
 
+            if (isset($event['event']) && $event['event'] === 'pusher:subscribe' or $event['event'] === 'pusher:subscription_succeeded') {
+                $channelName = $event['data']['channel'] ?? '';
+    
+                // Verificar se o canal é um canal de pagamentos
+                if (str_starts_with($channelName, 'payments-channel-')) {
+                    // Extrair o ID da máquina do nome do canal
+                    $machineId = intval(str_replace('payments-channel-', '', $channelName));
+    
+                    // Chamar o serviço para definir a máquina como online
+                    $machineService = new MachineService();
+                    $machineService->setMachineOnline($machineId);
+    
+                    // Registrar no log que a máquina foi marcada como online
+                    LogTETE::info('Machine set to online via subscription', [
+                        'machine_id' => $machineId,
+                        'connection_id' => $from->id(),
+                    ]);
+                }
+            }
+
             match (Str::startsWith($event['event'], 'pusher:')) {
                 true => $this->handler->handle(
                     $from,
@@ -75,13 +97,46 @@ class Server
      */
     public function close(Connection $connection): void
     {
-        $this->channels
-            ->for($connection->app())
-            ->unsubscribeFromAll($connection);
+        $channels = $this->channels->all(); // Supõe-se que isso retorna um array de Channel
+        $unsubscribedChannels = [];
 
+        $machineService = new MachineService();
+
+        foreach ($channels as $channel) {
+            $channelConnections = $this->channels->connections($channel->name());
+
+            foreach ($channelConnections as $channelConnection) {
+                // Comparar o ID da conexão
+                if ($channelConnection->id() === $connection->id()) {
+                    $channelName = $channel->name(); // Supondo que o método name() retorna o nome do canal
+                    $unsubscribedChannels[] = $channelName;
+
+                    // Desinscrever do canal
+                    $this->channels->unsubscribe($connection, $channelName);
+
+
+                    if (str_starts_with($channelName, 'payments-channel-')) {
+                        // Extrair o ID da máquina do nome do canal
+                        $machineId = intval(str_replace('payments-channel-', '', $channelName));
+    
+                        if (count($this->channels->connections($channelName)) === 0) {
+                            $machineService->setMachineOffline($machineId);
+                        }
+                    }
+                    break; // Já desinscrevemos do canal, podemos sair do loop
+                }
+            }
+        }
+
+        // Desconectar a conexão
         $connection->disconnect();
 
+        // Registrar que a conexão foi encerrada
         Log::info('Connection Closed', $connection->id());
+        LogTETE::info('Connection Closed', [
+            'connection_id' => $connection->id(),
+            'unsubscribed_channels' => $unsubscribedChannels,
+        ]);
     }
 
     /**
