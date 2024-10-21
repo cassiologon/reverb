@@ -152,4 +152,24 @@ class ArrayChannelManager implements ChannelManagerInterface
                 $this->applications[$application->id()] = [];
             });
     }
+
+    /**
+     * Unsubscribe from channel.
+     */
+
+    public function unsubscribe(Connection $connection, string $channel): void
+    {
+        // Lógica para desinscrever a conexão do canal
+        $channelInstance = $this->find($channel);
+     
+        if ($channelInstance) {
+            // Verifique se o canal tem um método para desinscrever a conexão
+            $channelInstance->unsubscribe($connection);
+     
+            // Opcionalmente, remova o canal se ele não tiver mais conexões
+            if (empty($channelInstance->connections())) {
+                $this->remove($channelInstance);
+            }
+        }
+    }
 }

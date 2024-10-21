@@ -61,4 +61,10 @@ interface ChannelManager
      * Flush the channel manager repository.
      */
     public function flush(): void;
+
+    /**
+     * Unsubscribe from channel.
+     */
+
+     public function unsubscribe(Connection $connection, string $channel): void;
 }
