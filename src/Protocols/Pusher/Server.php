@@ -113,12 +113,12 @@ class Server
 
                     // Desinscrever do canal
                     $this->channels->unsubscribe($connection, $channelName);
-
+                    LogTETE::info('nome do channel '.$channelName);
 
                     if (str_starts_with($channelName, 'payments-channel-')) {
                         // Extrair o ID da máquina do nome do canal
                         $machineId = intval(str_replace('payments-channel-', '', $channelName));
-    
+                        LogTETE::info('id da maquina '.$machineId);
                         if (count($this->channels->connections($channelName)) === 0) {
                             $machineService->setMachineOffline($machineId);
                         }
