@@ -120,7 +120,9 @@ class Server
                         // Verificar o número de conexões antes de desinscrever
                         if (count($this->channels->connections($channelName)) === 1) { // 1 pois ainda inclui a conexão atual
                             $machineService->setMachineOffline($machineId);
-                            LogTETE::info('Máquina definida como offline', ['machine_id' => $machineId]);
+                            LogTETE::info('Máquina definida como offline', [
+                                'machine_id' => $machineId,
+                            ]); // Passar um array, se necessário
                         }
                     }
 
@@ -135,11 +137,13 @@ class Server
         $connection->disconnect();
 
         // Log da conexão encerrada com canais desinscritos
-        Log::info('Connection Closed', [
+        Log::info('Connection Closed', $connection->id());
+        LogTETE::info('Connection Closed', [
             'connection_id' => $connection->id(),
-            'unsubscribed_channels' => json_encode($unsubscribedChannels), // Converter o array para string
+            'unsubscribed_channels' => $unsubscribedChannels,
         ]);
     }
+
 
     /**
      * Handle an error.
