@@ -109,13 +109,13 @@ class Server
                 if ($channelConnection->id() === $connection->id()) {
                     $channelName = $channel->name();
                     $unsubscribedChannels[] = $channelName;
-                    
+
                     // Adicionar log para verificar o canal encontrado
-                    LogTETE::info('Canal encontrado para desconexão: '.$channelName);
+                    LogTETE::info('Canal encontrado para desconexão: ' . $channelName);
 
                     if (str_starts_with($channelName, 'payments-channel-')) {
                         $machineId = intval(str_replace('payments-channel-', '', $channelName));
-                        LogTETE::info('ID da máquina extraída: '.$machineId);
+                        LogTETE::info('ID da máquina extraída: ' . $machineId);
 
                         // Verificar o número de conexões antes de desinscrever
                         if (count($this->channels->connections($channelName)) === 1) { // 1 pois ainda inclui a conexão atual
@@ -137,7 +137,7 @@ class Server
         // Log da conexão encerrada com canais desinscritos
         Log::info('Connection Closed', [
             'connection_id' => $connection->id(),
-            'unsubscribed_channels' => $unsubscribedChannels,
+            'unsubscribed_channels' => json_encode($unsubscribedChannels), // Converter o array para string
         ]);
     }
 
