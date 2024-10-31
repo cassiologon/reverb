@@ -117,12 +117,18 @@ class Server
                         $machineId = intval(str_replace('payments-channel-', '', $channelName));
                         LogTETE::info('ID da máquina extraída: ' . $machineId);
 
+                        $connectionCount = count($this->channels->connections($channelName));
+                        LogTETE::info('Número de conexões no canal: ' . $connectionCount);
+
                         // Verificar o número de conexões antes de desinscrever
-                        if (count($this->channels->connections($channelName)) === 1) { // 1 pois ainda inclui a conexão atual
+                        if ($connectionCount === 1) { // Apenas a conexão atual está ativa
+                            LogTETE::info('Definindo máquina como offline');
                             $machineService->setMachineOffline($machineId);
                             LogTETE::info('Máquina definida como offline', [
                                 'machine_id' => $machineId,
-                            ]); // Passar um array, se necessário
+                            ]);
+                        } elseif ($connectionCount > 1) {
+                            LogTETE::info('Máquina não definida como offline; múltiplas conexões ainda ativas.');
                         }
                     }
 
