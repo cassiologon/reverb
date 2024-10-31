@@ -106,24 +106,27 @@ class Server
             $channelConnections = $this->channels->connections($channel->name());
 
             foreach ($channelConnections as $channelConnection) {
-                // Comparar o ID da conexão
                 if ($channelConnection->id() === $connection->id()) {
-                    $channelName = $channel->name(); // Supondo que o método name() retorna o nome do canal
+                    $channelName = $channel->name();
                     $unsubscribedChannels[] = $channelName;
-
-                    // Desinscrever do canal
-                    $this->channels->unsubscribe($connection, $channelName);
-                    LogTETE::info('nome do channel '.$channelName);
+                    
+                    // Adicionar log para verificar o canal encontrado
+                    LogTETE::info('Canal encontrado para desconexão: '.$channelName);
 
                     if (str_starts_with($channelName, 'payments-channel-')) {
-                        // Extrair o ID da máquina do nome do canal
                         $machineId = intval(str_replace('payments-channel-', '', $channelName));
-                        LogTETE::info('id da maquina '.$machineId);
-                        if (count($this->channels->connections($channelName)) === 0) {
+                        LogTETE::info('ID da máquina extraída: '.$machineId);
+
+                        // Verificar o número de conexões antes de desinscrever
+                        if (count($this->channels->connections($channelName)) === 1) { // 1 pois ainda inclui a conexão atual
                             $machineService->setMachineOffline($machineId);
+                            LogTETE::info('Máquina definida como offline', ['machine_id' => $machineId]);
                         }
                     }
-                    break; // Já desinscrevemos do canal, podemos sair do loop
+
+                    // Desinscrever do canal após setar máquina como offline
+                    $this->channels->unsubscribe($connection, $channelName);
+                    break;
                 }
             }
         }
@@ -131,9 +134,8 @@ class Server
         // Desconectar a conexão
         $connection->disconnect();
 
-        // Registrar que a conexão foi encerrada
-        Log::info('Connection Closed', $connection->id());
-        LogTETE::info('Connection Closed', [
+        // Log da conexão encerrada com canais desinscritos
+        Log::info('Connection Closed', [
             'connection_id' => $connection->id(),
             'unsubscribed_channels' => $unsubscribedChannels,
         ]);
