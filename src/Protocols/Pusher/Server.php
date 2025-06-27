@@ -145,13 +145,15 @@ class Server
         // Desconectar a conexão
         $connection->disconnect();
 
-        // Log da conexão encerrada com canais desinscritos
-        Log::info('Connection Closed', $connection->id());
-        LogTETE::info('Connection Closed', [
-            'connection_id' => $connection->id(),
-            'unsubscribed_channels' => $unsubscribedChannels,
-            'payment_channels_checked' => $paymentChannelsToCheck,
-        ]);
+        // Só logar se houver canais de pagamentos envolvidos
+        if (!empty($paymentChannelsToCheck)) {
+            Log::info('Connection Closed', $connection->id());
+            LogTETE::info('Connection Closed', [
+                'connection_id' => $connection->id(),
+                'unsubscribed_channels' => $unsubscribedChannels,
+                'payment_channels_checked' => $paymentChannelsToCheck,
+            ]);
+        }
     }
 
 
