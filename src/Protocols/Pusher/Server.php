@@ -119,7 +119,6 @@ class Server
                     
                     // Desinscrever do canal
                     $this->channels->unsubscribe($connection, $channelName);
-                    break;
                 }
             }
         }
