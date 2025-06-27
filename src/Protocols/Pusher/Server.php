@@ -97,45 +97,48 @@ class Server
      */
     public function close(Connection $connection): void
     {
-        $channels = $this->channels->all(); // Supõe-se que isso retorna um array de Channel
-        $unsubscribedChannels = [];
-
         $machineService = new MachineService();
+        $unsubscribedChannels = [];
+        $paymentChannelsToCheck = [];
 
+        // Primeiro, identificar todos os canais de pagamentos que a conexão está inscrita
+        $channels = $this->channels->all();
+        
         foreach ($channels as $channel) {
             $channelConnections = $this->channels->connections($channel->name());
-
+            
             foreach ($channelConnections as $channelConnection) {
                 if ($channelConnection->id() === $connection->id()) {
                     $channelName = $channel->name();
                     $unsubscribedChannels[] = $channelName;
-
-                    // Adicionar log para verificar o canal encontrado
-                    LogTETE::info('Canal encontrado para desconexão: ' . $channelName);
-
+                    
+                    // Se for um canal de pagamentos, adicionar à lista para verificação posterior
                     if (str_starts_with($channelName, 'payments-channel-')) {
-                        $machineId = intval(str_replace('payments-channel-', '', $channelName));
-                        LogTETE::info('ID da máquina extraída: ' . $machineId);
-
-                        $connectionCount = count($this->channels->connections($channelName));
-                        LogTETE::info('Número de conexões no canal: ' . $connectionCount);
-
-                        // Verificar o número de conexões antes de desinscrever
-                        if ($connectionCount === 1) { // Apenas a conexão atual está ativa
-                            LogTETE::info('Definindo máquina como offline');
-                            $machineService->setMachineOffline($machineId);
-                            LogTETE::info('Máquina definida como offline', [
-                                'machine_id' => $machineId,
-                            ]);
-                        } elseif ($connectionCount > 1) {
-                            LogTETE::info('Máquina não definida como offline; múltiplas conexões ainda ativas.');
-                        }
+                        $paymentChannelsToCheck[] = $channelName;
                     }
-
-                    // Desinscrever do canal após setar máquina como offline
+                    
+                    // Desinscrever do canal
                     $this->channels->unsubscribe($connection, $channelName);
                     break;
                 }
+            }
+        }
+
+        // Agora verificar se algum canal de pagamentos ficou sem conexões
+        foreach ($paymentChannelsToCheck as $channelName) {
+            $remainingConnections = $this->channels->connections($channelName);
+            
+            // Se não há mais conexões no canal, marcar a máquina como offline
+            if (empty($remainingConnections)) {
+                $machineId = intval(str_replace('payments-channel-', '', $channelName));
+                
+                LogTETE::info('Canal de pagamentos sem conexões, marcando máquina como offline', [
+                    'machine_id' => $machineId,
+                    'channel_name' => $channelName,
+                    'connection_id' => $connection->id(),
+                ]);
+                
+                $machineService->setMachineOffline($machineId);
             }
         }
 
@@ -147,6 +150,7 @@ class Server
         LogTETE::info('Connection Closed', [
             'connection_id' => $connection->id(),
             'unsubscribed_channels' => $unsubscribedChannels,
+            'payment_channels_checked' => $paymentChannelsToCheck,
         ]);
     }
 
