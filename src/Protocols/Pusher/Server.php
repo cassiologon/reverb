@@ -153,10 +153,27 @@ class Server
                 $channel = $this->channels->find($channelName);
                 
                 if (!$channel) {
-                    LogTETE::info('Canal não encontrado após desinscrição', [
+                    // Se o canal não existe mais, significa que não há mais conexões ativas
+                    // Portanto, devemos marcar a máquina como offline
+                    $machineId = intval(str_replace('payments-channel-', '', $channelName));
+                    
+                    LogTETE::info('Canal não encontrado após desinscrição - marcando máquina como offline', [
                         'channel_name' => $channelName,
+                        'machine_id' => $machineId,
                         'connection_id' => $connection->id(),
                     ]);
+                    
+                    try {
+                        $machineService->setMachineOffline($machineId);
+                        LogTETE::info('Máquina marcada como offline com sucesso (canal removido)', [
+                            'machine_id' => $machineId,
+                        ]);
+                    } catch (Exception $e) {
+                        LogTETE::error('Erro ao marcar máquina como offline (canal removido)', [
+                            'machine_id' => $machineId,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
                     continue;
                 }
                 
