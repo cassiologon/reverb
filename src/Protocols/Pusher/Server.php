@@ -105,6 +105,46 @@ class Server
     }
 
     /**
+     * Get all machine IDs that are currently connected through payment channels.
+     */
+    protected function getConnectedMachineIds(): array
+    {
+        $connectedMachineIds = [];
+        $channels = $this->channels->all();
+        
+        foreach ($channels as $channel) {
+            $channelName = $channel->name();
+            
+            if (str_starts_with($channelName, 'payments-channel-')) {
+                $channelConnections = $this->channels->connections($channelName);
+                
+                if (!empty($channelConnections)) {
+                    $machineId = intval(str_replace('payments-channel-', '', $channelName));
+                    $connectedMachineIds[] = $machineId;
+                }
+            }
+        }
+        
+        return array_unique($connectedMachineIds);
+    }
+
+    /**
+     * Check if a specific machine is still connected through its payment channel.
+     */
+    protected function isMachineConnected(int $machineId): bool
+    {
+        $machineChannelName = "payments-channel-{$machineId}";
+        $channel = $this->channels->find($machineChannelName);
+        
+        if (!$channel) {
+            return false;
+        }
+        
+        $channelConnections = $this->channels->connections($machineChannelName);
+        return !empty($channelConnections);
+    }
+
+    /**
      * Handle a client disconnection.
      */
     public function close(Connection $connection): void
@@ -123,11 +163,14 @@ class Server
                 'total_channels' => count($channels),
             ]);
             
+            // Verificar se a conexão está inscrita em algum canal
+            $connectionSubscribedToChannels = false;
             foreach ($channels as $channel) {
                 $channelConnections = $this->channels->connections($channel->name());
                 
                 foreach ($channelConnections as $channelConnection) {
                     if ($channelConnection->id() === $connection->id()) {
+                        $connectionSubscribedToChannels = true;
                         $channelName = $channel->name();
                         $unsubscribedChannels[] = $channelName;
                         
@@ -142,6 +185,65 @@ class Server
                             $paymentChannelsToCheck[] = $channelName;
                         }
                     }
+                }
+            }
+            
+            // Se a conexão não está inscrita em nenhum canal, verificar se há máquinas que precisam ser marcadas como offline
+            // Isso pode acontecer quando a conexão já foi desinscrita antes do método close ser chamado
+            if (!$connectionSubscribedToChannels) {
+                LogTETE::info('Conexão não está inscrita em nenhum canal, verificando máquinas que podem precisar ser marcadas como offline', [
+                    'connection_id' => $connection->id(),
+                ]);
+                
+                // Verificar todos os canais de pagamentos individuais para ver se algum ficou sem conexões
+                foreach ($channels as $channel) {
+                    $channelName = $channel->name();
+                    
+                    if (str_starts_with($channelName, 'payments-channel-')) {
+                        $channelConnections = $this->channels->connections($channelName);
+                        
+                        // Se não há conexões neste canal, marcar a máquina como offline
+                        if (empty($channelConnections)) {
+                            $machineId = intval(str_replace('payments-channel-', '', $channelName));
+                            
+                            LogTETE::info('Canal de pagamentos individual sem conexões encontrado durante verificação geral', [
+                                'channel_name' => $channelName,
+                                'machine_id' => $machineId,
+                                'connection_id' => $connection->id(),
+                            ]);
+                            
+                            try {
+                                $machineService->setMachineOffline($machineId);
+                                LogTETE::info('Máquina marcada como offline durante verificação geral', [
+                                    'machine_id' => $machineId,
+                                ]);
+                            } catch (Exception $e) {
+                                LogTETE::error('Erro ao marcar máquina como offline durante verificação geral', [
+                                    'machine_id' => $machineId,
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
+                        }
+                    }
+                }
+                
+                // Verificação adicional: se não há nenhum canal de pagamentos individual ativo,
+                // verificar se há máquinas que podem ter sido desconectadas mas não foram marcadas como offline
+                $activePaymentChannels = [];
+                foreach ($channels as $channel) {
+                    $channelName = $channel->name();
+                    if (str_starts_with($channelName, 'payments-channel-')) {
+                        $channelConnections = $this->channels->connections($channelName);
+                        if (!empty($channelConnections)) {
+                            $activePaymentChannels[] = $channelName;
+                        }
+                    }
+                }
+                
+                if (empty($activePaymentChannels)) {
+                    LogTETE::info('Nenhum canal de pagamentos individual ativo encontrado', [
+                        'connection_id' => $connection->id(),
+                    ]);
                 }
             }
 
@@ -290,6 +392,13 @@ class Server
                     }
                 }
             }
+
+            // Verificação final: garantir que todas as máquinas que não têm conexões ativas sejam marcadas como offline
+            $connectedMachineIds = $this->getConnectedMachineIds();
+            LogTETE::info('Verificação final: máquinas conectadas após desconexão', [
+                'connection_id' => $connection->id(),
+                'connected_machine_ids' => $connectedMachineIds,
+            ]);
 
             // Desconectar a conexão
             $connection->disconnect();
