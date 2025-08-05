@@ -75,15 +75,7 @@ class Server
                         'connection_id' => $from->id(),
                     ]);
                 }
-                // Verificar se o canal é um canal de pagamentos geral
-                elseif (str_starts_with($channelName, 'paymentsAll-channel-')) {
-                    // Para canais gerais, não podemos determinar qual máquina específica
-                    // mas podemos registrar que uma conexão se inscreveu em um canal de pagamentos
-                    LogTETE::info('Connection subscribed to general payments channel', [
-                        'channel_name' => $channelName,
-                        'connection_id' => $from->id(),
-                    ]);
-                }
+                // Removido log de paymentsAll-channel-
             }
 
             match (Str::startsWith($event['event'], 'pusher:')) {
@@ -206,9 +198,9 @@ class Server
                             $machineIdsToCheck[] = $machineId;
                         }
                         // Se for um canal de pagamentos geral, também adicionar para verificação
-                        elseif (str_starts_with($channelName, 'paymentsAll-channel-')) {
-                            $paymentChannelsToCheck[] = $channelName;
-                        }
+                        // elseif (str_starts_with($channelName, 'paymentsAll-channel-')) {
+                        //     $paymentChannelsToCheck[] = $channelName;
+                        // }
                     }
                 }
             }
@@ -263,13 +255,16 @@ class Server
                 // Log removido - informação não essencial
             }
 
-            // Log reduzido - apenas quando há canais de pagamentos envolvidos
+            // Removido log de canais de pagamentos identificados para paymentsAll-channel-
             if (!empty($paymentChannelsToCheck)) {
-                LogTETE::info('Canais de pagamentos identificados', [
-                    'connection_id' => $connection->id(),
-                    'payment_channels' => $paymentChannelsToCheck,
-                    'machine_ids' => $machineIdsToCheck,
-                ]);
+                $onlyMachineChannels = array_filter($paymentChannelsToCheck, fn($ch) => str_starts_with($ch, 'payments-channel-'));
+                if (!empty($onlyMachineChannels)) {
+                    LogTETE::info('Canais de pagamentos identificados', [
+                        'connection_id' => $connection->id(),
+                        'payment_channels' => $onlyMachineChannels,
+                        'machine_ids' => $machineIdsToCheck,
+                    ]);
+                }
             }
 
             // Desinscrever de todos os canais
