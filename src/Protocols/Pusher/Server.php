@@ -383,10 +383,10 @@ class Server
             }
             
             // Verificar quais máquinas ficaram sem conexões e marcá-las como offline
-            $machinesToMarkOffline = [];
+            $additionalMachinesToMarkOffline = [];
             foreach ($paymentChannelsStatus as $channelStatus) {
                 if (!$channelStatus['has_connections']) {
-                    $machinesToMarkOffline[] = $channelStatus['machine_id'];
+                    $additionalMachinesToMarkOffline[] = $channelStatus['machine_id'];
                 }
             }
             
@@ -394,7 +394,8 @@ class Server
             LogTETE::info('Verificação final - máquinas para marcar como offline', [
                 'connection_id' => $connection->id(),
                 'machines_to_mark_offline' => $machinesToMarkOffline,
-                'total_machines_to_mark' => count($machinesToMarkOffline),
+                'additional_machines_to_mark_offline' => $additionalMachinesToMarkOffline,
+                'total_machines_to_mark' => count($machinesToMarkOffline) + count($additionalMachinesToMarkOffline),
             ]);
             
             // Marcar como offline apenas as máquinas que realmente não têm mais conexões
@@ -407,6 +408,23 @@ class Server
                     ]);
                 } catch (Exception $e) {
                     LogTETE::error('Erro ao marcar máquina como offline (verificação final)', [
+                        'machine_id' => $machineId,
+                        'connection_id' => $connection->id(),
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            
+            // Marcar como offline as máquinas adicionais identificadas
+            foreach ($additionalMachinesToMarkOffline as $machineId) {
+                try {
+                    $machineService->setMachineOffline($machineId);
+                    LogTETE::info('Máquina marcada como offline (verificação adicional de canais)', [
+                        'machine_id' => $machineId,
+                        'connection_id' => $connection->id(),
+                    ]);
+                } catch (Exception $e) {
+                    LogTETE::error('Erro ao marcar máquina como offline (verificação adicional)', [
                         'machine_id' => $machineId,
                         'connection_id' => $connection->id(),
                         'error' => $e->getMessage(),
