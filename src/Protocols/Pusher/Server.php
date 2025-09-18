@@ -366,6 +366,14 @@ class Server
                 }
             }
             
+            // Log detalhado para debug
+            LogTETE::info('Comparação de máquinas antes e depois da desconexão', [
+                'connection_id' => $connection->id(),
+                'machines_connected_before' => $machinesConnectedBefore,
+                'machines_with_connections' => $machinesWithConnections,
+                'payment_channels_status' => $paymentChannelsStatus,
+            ]);
+            
             // Verificar se há máquinas que estavam conectadas antes mas agora não têm mais conexões
             $machinesToMarkOffline = array_diff($machinesConnectedBefore, $machinesWithConnections);
             
@@ -392,6 +400,14 @@ class Server
                         ]);
                     }
                 }
+            } else {
+                // Log quando não há máquinas para marcar como offline
+                LogTETE::info('Nenhuma máquina precisa ser marcada como offline', [
+                    'connection_id' => $connection->id(),
+                    'machines_connected_before' => $machinesConnectedBefore,
+                    'machines_with_connections' => $machinesWithConnections,
+                    'reason' => 'Todas as máquinas que estavam conectadas ainda têm conexões ativas',
+                ]);
             }
             
             // Verificar quais máquinas ficaram sem conexões e marcá-las como offline
