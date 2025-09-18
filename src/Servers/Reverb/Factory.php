@@ -84,6 +84,16 @@ class Factory
             fn () => new PusherPubSubIncomingMessageHandler,
         );
 
+        // Registrar o Server como singleton para permitir acesso global
+        app()->singleton(
+            \Laravel\Reverb\Protocols\Pusher\Server::class,
+            fn () => new \Laravel\Reverb\Protocols\Pusher\Server(
+                app(\Laravel\Reverb\Protocols\Pusher\Contracts\ChannelManager::class),
+                app(\Laravel\Reverb\Protocols\Pusher\EventHandler::class),
+                app(\App\Services\MachineService::class)
+            )
+        );
+
         return new Router(new UrlMatcher(static::pusherRoutes(), new RequestContext));
     }
 

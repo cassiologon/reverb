@@ -94,6 +94,29 @@ class StartServer extends Command implements SignalableCommandInterface
             PruneStaleConnections::dispatch();
             PingInactiveConnections::dispatch();
         });
+        
+        // Adicionar limpeza periódica de máquinas offline a cada 5 minutos
+        $loop->addPeriodicTimer(300, function () {
+            $this->performMachineCleanup();
+        });
+    }
+    
+    /**
+     * Perform periodic cleanup of offline machines.
+     */
+    protected function performMachineCleanup(): void
+    {
+        try {
+            // Usar a instância do Server que já está registrada no container
+            $pusherServer = $this->laravel->make(\Laravel\Reverb\Protocols\Pusher\Server::class);
+            
+            if (method_exists($pusherServer, 'performPeriodicCleanup')) {
+                $pusherServer->performPeriodicCleanup();
+            }
+        } catch (\Exception $e) {
+            // Log do erro mas não interrompe o servidor
+            $this->laravel->make(\Laravel\Reverb\Loggers\Log::class)->error('Erro na limpeza periódica de máquinas: ' . $e->getMessage());
+        }
     }
 
     /**
