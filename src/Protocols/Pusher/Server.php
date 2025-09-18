@@ -178,12 +178,14 @@ class Server
             // Capturar o estado das máquinas conectadas ANTES da desconexão
             $machinesConnectedBefore = $this->getConnectedMachineIds();
             
-            // Log para debug - estado inicial
-            LogTETE::info('Iniciando processo de desconexão', [
-                'connection_id' => $connection->id(),
-                'machines_connected_before' => $machinesConnectedBefore,
-                'total_machines_connected' => count($machinesConnectedBefore),
-            ]);
+            // Log para debug - estado inicial (apenas se há máquinas conectadas)
+            if (!empty($machinesConnectedBefore)) {
+                LogTETE::info('Iniciando processo de desconexão', [
+                    'connection_id' => $connection->id(),
+                    'machines_connected_before' => $machinesConnectedBefore,
+                    'total_machines_connected' => count($machinesConnectedBefore),
+                ]);
+            }
 
             // Primeiro, identificar todos os canais de pagamentos que a conexão está inscrita
             $channels = $this->channels->all();
@@ -209,14 +211,19 @@ class Server
                 }
             }
             
-            // Log para debug - canais encontrados
-            LogTETE::info('Canais encontrados para a conexão', [
-                'connection_id' => $connection->id(),
-                'connection_subscribed_to_channels' => $connectionSubscribedToChannels,
-                'unsubscribed_channels' => $unsubscribedChannels,
-                'payment_channels_to_check' => $paymentChannelsToCheck,
-                'machine_ids_to_check' => $machineIdsToCheck,
-            ]);
+            // Log para debug - canais de máquinas encontrados
+            $machineChannelsUnsubscribed = array_filter($unsubscribedChannels, function($channel) {
+                return str_starts_with($channel, 'payments-channel-');
+            });
+            
+            if (!empty($machineChannelsUnsubscribed)) {
+                LogTETE::info('Canais de máquinas encontrados para a conexão', [
+                    'connection_id' => $connection->id(),
+                    'machine_channels_unsubscribed' => $machineChannelsUnsubscribed,
+                    'payment_channels_to_check' => $paymentChannelsToCheck,
+                    'machine_ids_to_check' => $machineIdsToCheck,
+                ]);
+            }
             
             // Desinscrever de todos os canais
             foreach ($unsubscribedChannels as $channelName) {
@@ -226,12 +233,14 @@ class Server
             // Pequena pausa para garantir que a desinscrição foi processada
             usleep(1000); // 1ms
             
-            // Log para debug - após desinscrição
-            LogTETE::info('Após desinscrição dos canais', [
-                'connection_id' => $connection->id(),
-                'channels_unsubscribed' => $unsubscribedChannels,
-                'total_channels_unsubscribed' => count($unsubscribedChannels),
-            ]);
+            // Log para debug - após desinscrição (apenas canais de máquinas)
+            if (!empty($machineChannelsUnsubscribed)) {
+                LogTETE::info('Após desinscrição dos canais de máquinas', [
+                    'connection_id' => $connection->id(),
+                    'machine_channels_unsubscribed' => $machineChannelsUnsubscribed,
+                    'total_machine_channels_unsubscribed' => count($machineChannelsUnsubscribed),
+                ]);
+            }
 
             // Agora verificar se algum canal de pagamentos ficou sem conexões
             foreach ($paymentChannelsToCheck as $channelName) {
@@ -328,23 +337,26 @@ class Server
             // VERIFICAÇÃO FINAL COMPLETA: Verificar todos os canais de pagamentos após a desconexão
             $paymentChannelsStatus = $this->getPaymentChannelsStatus();
             
-            // Log para debug - verificação final
-            LogTETE::info('Verificação final - Status dos canais de pagamento', [
-                'connection_id' => $connection->id(),
-                'payment_channels_status' => $paymentChannelsStatus,
-                'machines_connected_before' => $machinesConnectedBefore,
-                'total_channels' => count($paymentChannelsStatus),
-            ]);
+            // Log para debug - verificação final (apenas se há canais de máquinas)
+            if (!empty($paymentChannelsStatus)) {
+                LogTETE::info('Verificação final - Status dos canais de máquinas', [
+                    'connection_id' => $connection->id(),
+                    'payment_channels_status' => $paymentChannelsStatus,
+                    'machines_connected_before' => $machinesConnectedBefore,
+                    'total_machine_channels' => count($paymentChannelsStatus),
+                ]);
+            }
             
             // VERIFICAÇÃO FINAL: Verificar todas as máquinas que estavam conectadas antes da desconexão
             // e comparar com o estado atual para identificar quais devem ser marcadas como offline
-            LogTETE::info('Verificando máquinas conectadas antes da desconexão', [
-                'connection_id' => $connection->id(),
-                'machines_connected_before' => $machinesConnectedBefore,
-                'count' => count($machinesConnectedBefore),
-                'connection_subscribed_to_channels' => $connectionSubscribedToChannels,
-                'total_payment_channels' => count($paymentChannelsStatus),
-            ]);
+            if (!empty($machinesConnectedBefore)) {
+                LogTETE::info('Verificando máquinas conectadas antes da desconexão', [
+                    'connection_id' => $connection->id(),
+                    'machines_connected_before' => $machinesConnectedBefore,
+                    'count' => count($machinesConnectedBefore),
+                    'total_machine_channels' => count($paymentChannelsStatus),
+                ]);
+            }
             
             // Identificar quais máquinas ainda têm conexões ativas
             $machinesWithConnections = [];
@@ -390,13 +402,16 @@ class Server
                 }
             }
             
-            // Log para debug - verificação final
-            LogTETE::info('Verificação final - máquinas para marcar como offline', [
-                'connection_id' => $connection->id(),
-                'machines_to_mark_offline' => $machinesToMarkOffline,
-                'additional_machines_to_mark_offline' => $additionalMachinesToMarkOffline,
-                'total_machines_to_mark' => count($machinesToMarkOffline) + count($additionalMachinesToMarkOffline),
-            ]);
+            // Log para debug - verificação final (apenas se há máquinas para marcar como offline)
+            $totalMachinesToMark = count($machinesToMarkOffline) + count($additionalMachinesToMarkOffline);
+            if ($totalMachinesToMark > 0) {
+                LogTETE::info('Verificação final - máquinas para marcar como offline', [
+                    'connection_id' => $connection->id(),
+                    'machines_to_mark_offline' => $machinesToMarkOffline,
+                    'additional_machines_to_mark_offline' => $additionalMachinesToMarkOffline,
+                    'total_machines_to_mark' => $totalMachinesToMark,
+                ]);
+            }
             
             // Marcar como offline apenas as máquinas que realmente não têm mais conexões
             foreach ($machinesToMarkOffline as $machineId) {
