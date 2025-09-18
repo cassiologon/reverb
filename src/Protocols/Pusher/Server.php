@@ -374,8 +374,35 @@ class Server
                 'payment_channels_status' => $paymentChannelsStatus,
             ]);
             
+            // VERIFICAÇÃO CRÍTICA: Detectar máquinas que "desapareceram" do sistema
+            // Se o número de máquinas conectadas diminuiu significativamente, 
+            // pode indicar que algumas máquinas desconectaram silenciosamente
+            $currentConnectedCount = count($machinesWithConnections);
+            $previousConnectedCount = count($machinesConnectedBefore);
+            
+            if ($currentConnectedCount < $previousConnectedCount) {
+                LogTETE::info('Detectada redução no número de máquinas conectadas', [
+                    'connection_id' => $connection->id(),
+                    'previous_count' => $previousConnectedCount,
+                    'current_count' => $currentConnectedCount,
+                    'machines_connected_before' => $machinesConnectedBefore,
+                    'machines_with_connections' => $machinesWithConnections,
+                    'possible_silent_disconnections' => array_diff($machinesConnectedBefore, $machinesWithConnections),
+                ]);
+            }
+            
             // Verificar se há máquinas que estavam conectadas antes mas agora não têm mais conexões
             $machinesToMarkOffline = array_diff($machinesConnectedBefore, $machinesWithConnections);
+            
+            // VERIFICAÇÃO ADICIONAL: Se detectamos redução no número de máquinas,
+            // forçar a marcação como offline das máquinas que "desapareceram"
+            if ($currentConnectedCount < $previousConnectedCount && !empty($machinesToMarkOffline)) {
+                LogTETE::info('Forçando marcação como offline de máquinas que desapareceram', [
+                    'connection_id' => $connection->id(),
+                    'machines_to_mark_offline' => $machinesToMarkOffline,
+                    'reason' => 'Máquinas detectadas como desconectadas silenciosamente',
+                ]);
+            }
             
             if (!empty($machinesToMarkOffline)) {
                 LogTETE::info('Máquinas que estavam conectadas antes mas agora não têm mais conexões', [
