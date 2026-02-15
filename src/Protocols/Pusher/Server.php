@@ -74,6 +74,18 @@ class Server
                         'machine_id' => $machineId,
                         'connection_id' => $from->id(),
                     ]);
+
+                    try {
+                        \App\Models\MachineLog::create([
+                            'machine_id' => $machineId,
+                            'type' => 'connection',
+                            'title' => 'Máquina conectou via WebSocket',
+                            'details' => ['connection_id' => $from->id()],
+                            'created_at' => now(),
+                        ]);
+                    } catch (Exception $e) {
+                        LogTETE::warning('Erro ao salvar log de conexão: ' . $e->getMessage());
+                    }
                 }
                 // Removido log de paymentsAll-channel-
             }
@@ -367,6 +379,14 @@ class Server
                     LogTETE::info('Máquina marcada como offline', [
                         'machine_id' => $machineId,
                         'connection_id' => $connection->id(),
+                    ]);
+
+                    \App\Models\MachineLog::create([
+                        'machine_id' => $machineId,
+                        'type' => 'disconnection',
+                        'title' => 'Máquina desconectou',
+                        'details' => ['connection_id' => $connection->id()],
+                        'created_at' => now(),
                     ]);
                 } catch (Exception $e) {
                     LogTETE::error('Erro ao marcar máquina como offline', [
