@@ -380,14 +380,6 @@ class Server
                         'machine_id' => $machineId,
                         'connection_id' => $connection->id(),
                     ]);
-
-                    \App\Models\MachineLog::create([
-                        'machine_id' => $machineId,
-                        'type' => 'disconnection',
-                        'title' => 'Máquina desconectou',
-                        'details' => ['connection_id' => $connection->id()],
-                        'created_at' => now(),
-                    ]);
                 } catch (Exception $e) {
                     LogTETE::error('Erro ao marcar máquina como offline', [
                         'machine_id' => $machineId,
