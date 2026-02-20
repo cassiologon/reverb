@@ -75,17 +75,6 @@ class Server
                         'connection_id' => $from->id(),
                     ]);
 
-                    try {
-                        \App\Models\MachineLog::create([
-                            'machine_id' => $machineId,
-                            'type' => 'connection',
-                            'title' => 'Máquina conectou via WebSocket',
-                            'details' => ['connection_id' => $from->id()],
-                            'created_at' => now(),
-                        ]);
-                    } catch (Exception $e) {
-                        LogTETE::warning('Erro ao salvar log de conexão: ' . $e->getMessage());
-                    }
                 }
                 // Removido log de paymentsAll-channel-
             }
