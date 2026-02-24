@@ -16,6 +16,12 @@ use App\Services\MachineService;
 class Server
 {
     /**
+     * Channel name patterns for machine detection.
+     */
+    private const LEGACY_PREFIX = 'payments-channel-';
+    private const SECURE_PREFIX = 'private-payments-channel-secure.';
+
+    /**
      * Create a new server instance.
      */
     public function __construct(
@@ -24,6 +30,34 @@ class Server
         protected ?MachineService $machineService = null
     ) {
         //
+    }
+
+    /**
+     * Extract machine ID from a payment channel name (legacy or secure).
+     * Returns null if the channel is not a payment channel.
+     */
+    protected function extractMachineId(string $channelName): ?int
+    {
+        if (str_starts_with($channelName, self::SECURE_PREFIX)) {
+            return intval(str_replace(self::SECURE_PREFIX, '', $channelName));
+        }
+
+        if (str_starts_with($channelName, self::LEGACY_PREFIX)) {
+            $suffix = str_replace(self::LEGACY_PREFIX, '', $channelName);
+            if (is_numeric($suffix)) {
+                return intval($suffix);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if a channel name is a payment channel (legacy or secure).
+     */
+    protected function isPaymentChannel(string $channelName): bool
+    {
+        return $this->extractMachineId($channelName) !== null;
     }
 
     /**
@@ -57,26 +91,20 @@ class Server
         try {
             $event = json_decode($message, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            if (isset($event['event']) && $event['event'] === 'pusher:subscribe' or $event['event'] === 'pusher:subscription_succeeded') {
+            if (isset($event['event']) && ($event['event'] === 'pusher:subscribe' || $event['event'] === 'pusher:subscription_succeeded')) {
                 $channelName = $event['data']['channel'] ?? '';
-    
-                // Verificar se o canal é um canal de pagamentos individual
-                if (str_starts_with($channelName, 'payments-channel-')) {
-                    // Extrair o ID da máquina do nome do canal
-                    $machineId = intval(str_replace('payments-channel-', '', $channelName));
-    
-                    // Chamar o serviço para definir a máquina como online
+                $machineId = $this->extractMachineId($channelName);
+
+                if ($machineId !== null) {
                     $machineService = $this->machineService ?? new MachineService();
                     $machineService->setMachineOnline($machineId);
-    
-                    // Registrar no log que a máquina foi marcada como online
+
                     LogTETE::info('Machine set to online via subscription', [
                         'machine_id' => $machineId,
+                        'channel' => $channelName,
                         'connection_id' => $from->id(),
                     ]);
-
                 }
-                // Removido log de paymentsAll-channel-
             }
 
             match (Str::startsWith($event['event'], 'pusher:')) {
@@ -107,12 +135,12 @@ class Server
         
         foreach ($channels as $channel) {
             $channelName = $channel->name();
-            
-            if (str_starts_with($channelName, 'payments-channel-')) {
+            $machineId = $this->extractMachineId($channelName);
+
+            if ($machineId !== null) {
                 $channelConnections = $this->channels->connections($channelName);
                 
                 if (!empty($channelConnections)) {
-                    $machineId = intval(str_replace('payments-channel-', '', $channelName));
                     $connectedMachineIds[] = $machineId;
                 }
             }
@@ -131,10 +159,10 @@ class Server
         
         foreach ($channels as $channel) {
             $channelName = $channel->name();
-            
-            if (str_starts_with($channelName, 'payments-channel-')) {
+            $machineId = $this->extractMachineId($channelName);
+
+            if ($machineId !== null) {
                 $channelConnections = $this->channels->connections($channelName);
-                $machineId = intval(str_replace('payments-channel-', '', $channelName));
                 
                 $channelsStatus[] = [
                     'channel_name' => $channelName,
@@ -154,15 +182,22 @@ class Server
      */
     protected function isMachineConnected(int $machineId): bool
     {
-        $machineChannelName = "payments-channel-{$machineId}";
-        $channel = $this->channels->find($machineChannelName);
-        
-        if (!$channel) {
-            return false;
+        $channelNames = [
+            self::LEGACY_PREFIX . $machineId,
+            self::SECURE_PREFIX . $machineId,
+        ];
+
+        foreach ($channelNames as $channelName) {
+            $channel = $this->channels->find($channelName);
+            if ($channel) {
+                $channelConnections = $this->channels->connections($channelName);
+                if (!empty($channelConnections)) {
+                    return true;
+                }
+            }
         }
-        
-        $channelConnections = $this->channels->connections($machineChannelName);
-        return !empty($channelConnections);
+
+        return false;
     }
 
     /**
@@ -258,21 +293,26 @@ class Server
     protected function finalMachineStatusCheck(Connection $connection, MachineService $machineService): void
     {
         try {
-            // Get all payment channels and check their connection status
             $paymentChannelsStatus = $this->getPaymentChannelsStatus();
-            
+            $checkedMachines = [];
+
             foreach ($paymentChannelsStatus as $channelStatus) {
-                if (!$channelStatus['has_connections']) {
+                $mid = $channelStatus['machine_id'];
+                if (isset($checkedMachines[$mid])) {
+                    continue;
+                }
+                $checkedMachines[$mid] = true;
+
+                if (!$this->isMachineConnected($mid)) {
                     try {
-                        $machineService->setMachineOffline($channelStatus['machine_id']);
+                        $machineService->setMachineOffline($mid);
                         LogTETE::info('Máquina marcada como offline (verificação final)', [
-                            'machine_id' => $channelStatus['machine_id'],
+                            'machine_id' => $mid,
                             'connection_id' => $connection->id(),
-                            'channel_name' => $channelStatus['channel_name'],
                         ]);
                     } catch (Exception $e) {
                         LogTETE::error('Erro ao marcar máquina como offline (verificação final)', [
-                            'machine_id' => $channelStatus['machine_id'],
+                            'machine_id' => $mid,
                             'connection_id' => $connection->id(),
                             'error' => $e->getMessage(),
                         ]);
@@ -310,15 +350,14 @@ class Server
                 ]);
             }
 
-            // Otimização: identificar apenas canais de pagamentos que a conexão está inscrita
             $channels = $this->channels->all();
             $connectionSubscribedToChannels = false;
             
             foreach ($channels as $channel) {
                 $channelName = $channel->name();
-                
-                // Focar apenas em canais de pagamentos para otimizar performance
-                if (str_starts_with($channelName, 'payments-channel-')) {
+                $machineId = $this->extractMachineId($channelName);
+
+                if ($machineId !== null) {
                     $channelConnections = $this->channels->connections($channelName);
                     
                     foreach ($channelConnections as $channelConnection) {
@@ -326,9 +365,8 @@ class Server
                             $connectionSubscribedToChannels = true;
                             $unsubscribedChannels[] = $channelName;
                             $paymentChannelsToCheck[] = $channelName;
-                            $machineId = intval(str_replace('payments-channel-', '', $channelName));
                             $machineIdsToCheck[] = $machineId;
-                            break; // Otimização: sair do loop interno
+                            break;
                         }
                     }
                 }
@@ -343,20 +381,23 @@ class Server
             $machinesToMarkOffline = [];
             
             foreach ($paymentChannelsToCheck as $channelName) {
+                $machineId = $this->extractMachineId($channelName);
+                if ($machineId === null) {
+                    continue;
+                }
+
                 $channel = $this->channels->find($channelName);
                 
                 if (!$channel) {
-                    // Canal foi removido - máquina deve estar offline
-                    $machineId = intval(str_replace('payments-channel-', '', $channelName));
-                    $machinesToMarkOffline[] = $machineId;
+                    if (!$this->isMachineConnected($machineId)) {
+                        $machinesToMarkOffline[] = $machineId;
+                    }
                     continue;
                 }
                 
                 $remainingConnections = $this->channels->connections($channelName);
                 
-                // Se não há mais conexões no canal, marcar a máquina como offline
-                if (empty($remainingConnections)) {
-                    $machineId = intval(str_replace('payments-channel-', '', $channelName));
+                if (empty($remainingConnections) && !$this->isMachineConnected($machineId)) {
                     $machinesToMarkOffline[] = $machineId;
                 }
             }
